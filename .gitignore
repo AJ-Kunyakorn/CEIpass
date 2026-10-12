@@ -1,0 +1,15 @@
+# Java build output
+BackEnd/target/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# IDE and operating-system files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+*.md
