@@ -13,3 +13,5 @@ BackEnd/target/
 Thumbs.db
 *.log
 *.md
+!docs/
+!docs/*.md

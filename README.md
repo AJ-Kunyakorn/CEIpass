@@ -48,7 +48,7 @@ Prerequisites: Java 21, Maven 3.9+, and SQL Server 2022 or a compatible SQL Serv
 
    The API applies Flyway migrations on startup. Check it at `http://localhost:8080/api/v1/health`.
 
-3. Serve `FrontEnd/` at `http://localhost:5500` with a static-file development server, such as the VS Code Live Server extension. The visitor UI calls the API at `http://localhost:8080`; configure `FrontEnd/js/config.js` if your local API address differs. The five screens and sample catalog/cart work in the browser; account, payment, and history endpoints, plus authenticated QR issuance, still need implementation.
+3. Serve `FrontEnd/` at `http://localhost:5500` with a static-file development server, such as the VS Code Live Server extension. The visitor UI calls the API at `http://localhost:8080`; configure `FrontEnd/js/config.js` if your local API address differs. The five screens and sample catalog/cart work in the browser. Public catalog read endpoints are implemented, but the frontend still uses sample catalog data, and the catalog tables require approved records before they return listings. Account, payment, and history endpoints, plus authenticated QR issuance, still need implementation.
 
 4. Run backend tests with `mvn -f BackEnd/pom.xml test`.
 
