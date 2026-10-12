@@ -1,12 +1,16 @@
 package com.chiangraipass.api.health;
 
 import com.chiangraipass.config.CorsConfiguration;
+import com.chiangraipass.config.SecurityConfiguration;
+import com.chiangraipass.api.auth.VisitorOAuth2UserService;
 import com.chiangraipass.config.CorsProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.security.core.userdetails.UserDetailsService;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -15,11 +19,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(HealthController.class)
-@Import(CorsConfiguration.class)
+@Import({CorsConfiguration.class, SecurityConfiguration.class})
 class HealthControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private UserDetailsService userDetailsService;
+
+    @MockitoBean
+    private VisitorOAuth2UserService oauthUserService;
 
     @Test
     void returnsApiHealth() throws Exception {
@@ -37,6 +47,19 @@ class HealthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5500"))
                 .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
+    }
+
+    @Test
+    void allowsCsrfHeaderForCredentialedFrontendRequests() throws Exception {
+        mockMvc.perform(options("/api/v1/auth/register")
+                        .header("Origin", "http://localhost:5500")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "content-type,x-xsrf-token"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5500"))
+                .andExpect(header().string(
+                        "Access-Control-Allow-Headers",
+                        org.hamcrest.Matchers.containsStringIgnoringCase("X-XSRF-TOKEN")));
     }
 
     @Test

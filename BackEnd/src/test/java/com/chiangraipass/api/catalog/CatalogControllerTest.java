@@ -3,12 +3,15 @@ package com.chiangraipass.api.catalog;
 import java.util.List;
 
 import com.chiangraipass.config.CorsConfiguration;
+import com.chiangraipass.config.SecurityConfiguration;
+import com.chiangraipass.api.auth.VisitorOAuth2UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.core.userdetails.UserDetailsService;
 
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -16,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(CatalogController.class)
-@Import(CorsConfiguration.class)
+@Import({CorsConfiguration.class, SecurityConfiguration.class})
 class CatalogControllerTest {
 
     @Autowired
@@ -24,6 +27,12 @@ class CatalogControllerTest {
 
     @MockitoBean
     private CatalogRepository catalogRepository;
+
+    @MockitoBean
+    private UserDetailsService userDetailsService;
+
+    @MockitoBean
+    private VisitorOAuth2UserService oauthUserService;
 
     @Test
     void returnsAvailablePassesWithIntegerMinorUnitPrices() throws Exception {

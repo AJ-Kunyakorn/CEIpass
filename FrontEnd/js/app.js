@@ -25,10 +25,11 @@ const announcer = document.querySelector("#app-announcer");
 const apiBaseUrl = window.CEIPASS_CONFIG?.apiBaseUrl;
 let profileMode = "login";
 let qrRefreshTimer;
+let profileFeedback = "";
 
 class ApiError extends Error {
-  constructor(status) {
-    super(`The service returned HTTP ${status}.`);
+  constructor(status, message = `The service returned HTTP ${status}.`) {
+    super(message);
     this.name = "ApiError";
     this.status = status;
   }
@@ -227,16 +228,57 @@ function apiUrl(path) {
   return `${apiBaseUrl.replace(/\/+$/, "")}${path}`;
 }
 
-async function requestJson(path) {
+async function requestJson(path, options = {}) {
   const response = await fetch(apiUrl(path), {
-    headers: { Accept: "application/json" },
+    ...options,
+    headers: { Accept: "application/json", ...options.headers },
     credentials: "include",
-    signal: AbortSignal.timeout(5000)
+    signal: options.signal || AbortSignal.timeout(8000)
   });
   if (!response.ok) {
-    throw new ApiError(response.status);
+    let message = `The service returned HTTP ${response.status}.`;
+    try {
+      const body = await response.json();
+      if (typeof body.message === "string") message = body.message;
+      else if (typeof body.detail === "string") message = body.detail;
+    } catch (error) {
+      console.debug("The API error response did not contain JSON.", error);
+    }
+    throw new ApiError(response.status, message);
   }
   return response.json();
+}
+
+async function csrfHeaders() {
+  await requestJson("/api/v1/auth/csrf", { cache: "no-store" });
+  const cookie = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  if (!cookie) {
+    throw new Error("The security token could not be retrieved. Refresh and try again.");
+  }
+  return { "X-XSRF-TOKEN": decodeURIComponent(cookie[1]) };
+}
+
+async function clearQrForAccountSwitch(accountId) {
+  const previousAccountId = localStorage.getItem(LAST_QR_ACCOUNT_KEY);
+  if (!previousAccountId || previousAccountId === accountId) return "";
+
+  let cleanupFailed = false;
+  try {
+    localStorage.removeItem(LAST_QR_ACCOUNT_KEY);
+  } catch (error) {
+    cleanupFailed = true;
+    console.error("The previous account's saved QR reference could not be removed.", error);
+  }
+  try {
+    await clearCachedQr(previousAccountId);
+  } catch (error) {
+    cleanupFailed = true;
+    console.error("The previous account's saved QR could not be deleted.", error);
+  }
+  if (cleanupFailed) {
+    return "You are signed in, but the previous account's saved QR could not be deleted from this device.";
+  }
+  return "";
 }
 
 function openQrDatabase() {
@@ -306,6 +348,22 @@ async function clearCachedQr(accountId) {
     transaction.onerror = () => {
       database.close();
       reject(transaction.error || new Error("Could not clear the saved QR code."));
+    };
+  });
+}
+
+async function clearAllCachedQr() {
+  const database = await openQrDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(QR_STORE_NAME, "readwrite");
+    transaction.objectStore(QR_STORE_NAME).clear();
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error || new Error("Could not clear saved QR codes."));
     };
   });
 }
@@ -507,51 +565,113 @@ async function renderHistoryPage() {
   }
 }
 
-function profilePage() {
+function profilePage(authState) {
+  if (authState.account) {
+    const account = authState.account;
+    return `<section>
+      ${pageHeading("Your account", `Welcome, ${escapeHtml(account.displayName)}.`, "Your account is signed in on this device.")}
+      <div class="profile-card">
+        <div class="profile-option-row"><span><strong>Email address</strong><small>${escapeHtml(account.email)}</small></span><span class="coming-soon">Signed in</span></div>
+        <button type="button" class="button button-outline button-full" data-action="logout">Sign out</button>
+        <p id="account-message" class="form-message" role="status" aria-live="polite">${escapeHtml(authState.notice || "")}</p>
+      </div>
+      <section class="profile-options" aria-labelledby="profile-options-title">
+        <p class="eyebrow">Your details</p>
+        <h2 id="profile-options-title">Personal information & privacy</h2>
+        <p>Account management and privacy requests will be connected here as those services are implemented.</p>
+      </section>
+    </section>`;
+  }
+
   const registration = profileMode === "register";
+  const config = authState.config;
+  const hasProviders = config.oauthProviders.length > 0;
+  const authNotice = authState.notice || authState.error || "";
+  const privacyLink = config.privacyNoticeUrl
+    ? `<a href="${escapeHtml(config.privacyNoticeUrl)}" target="_blank" rel="noopener noreferrer">Read the Privacy Notice</a>`
+    : "The Privacy Notice is not configured.";
   return `<section>
     ${pageHeading("Your account", "Make it yours.", registration ? "Create an account to keep your pass close." : "Sign in to find your passes and trips.")}
     <div class="profile-card">
       <div class="profile-tabs" role="tablist" aria-label="Account access">
         <button type="button" role="tab" aria-controls="account-form" aria-selected="${!registration}" class="${!registration ? "is-active" : ""}" data-action="profile-mode" data-mode="login">Sign in</button>
-        <button type="button" role="tab" aria-controls="account-form" aria-selected="${registration}" class="${registration ? "is-active" : ""}" data-action="profile-mode" data-mode="register">Create account</button>
+        <button type="button" role="tab" aria-controls="account-form" aria-selected="${registration}" class="${registration ? "is-active" : ""}" data-action="profile-mode" data-mode="register"${config.registrationEnabled ? "" : " disabled"}>Create account</button>
       </div>
-      <p class="demo-notice profile-api-note"><span aria-hidden="true">i</span><span>Account services are not connected yet. This preview will not send or save your details.</span></p>
+      ${authState.error ? `<p class="demo-notice profile-api-note" role="alert"><span aria-hidden="true">!</span><span>${escapeHtml(authState.error)}</span></p>` : ""}
+      ${!config.registrationEnabled ? `<p class="demo-notice profile-api-note"><span aria-hidden="true">i</span><span>New accounts are disabled until the reviewed Privacy Notice and its version are configured by the service operator.</span></p>` : ""}
       <form id="account-form" class="account-form" role="tabpanel" novalidate>
         ${registration ? `<label class="field-label" for="full-name">Full name</label><input id="full-name" name="fullName" autocomplete="name" required maxlength="120" placeholder="Your name">` : ""}
         <label class="field-label" for="email">Email address</label>
         <input id="email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com">
         <label class="field-label" for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="${registration ? "new-password" : "current-password"}" required${registration ? ' minlength="12"' : ""} placeholder="${registration ? "At least 12 characters" : "Your password"}">
+        <input id="password" name="password" type="password" autocomplete="${registration ? "new-password" : "current-password"}" required${registration ? ' minlength="12" maxlength="72"' : ""} placeholder="${registration ? "At least 12 characters" : "Your password"}">
         ${registration ? `<div class="consent-box">
-          <details class="privacy-preview"><summary>Privacy information preview</summary><p>The real notice is not published yet. Before account registration, the team must identify the data controller and contact, required data and purpose/legal basis, service providers, retention, user rights/request channel, and any international transfers. This preview is not a privacy notice.</p></details>
-          <label class="check-row"><input type="checkbox" name="privacyAcknowledged" required><span>I acknowledge that I have seen the draft privacy information. This is not a legal consent or a real registration.</span></label>
-          <label class="check-row"><input type="checkbox" name="marketingConsent"><span>Preview only: I would like optional news and offers. This choice is not saved and cannot be withdrawn here.</span></label>
-          <p>This is a non-functional preview; no choice is saved. Publish and review the Privacy Notice before enabling registration. Marketing consent must remain optional and separate from necessary account processing.</p>
+          <div class="privacy-preview">${privacyLink}<p>Account creation records that you acknowledged this notice. This acknowledgement is not marketing consent.</p></div>
+          <label class="check-row"><input type="checkbox" name="privacyNoticeAcknowledged" required><span>I have read and acknowledge the published Privacy Notice.</span></label>
         </div>` : ""}
-        <button type="submit" class="button button-dark button-full">${registration ? "Create account" : "Sign in"} <span aria-hidden="true">→</span></button>
-        <p id="account-message" class="form-message" role="status" aria-live="polite"></p>
+        <button type="submit" class="button button-dark button-full"${registration && !config.registrationEnabled ? " disabled" : ""}>${registration ? "Create account" : "Sign in"} <span aria-hidden="true">→</span></button>
+        <p id="account-message" class="form-message" role="status" aria-live="polite">${escapeHtml(authNotice)}</p>
       </form>
-      <div class="divider"><span>or continue with</span></div>
+      ${hasProviders ? `<div class="divider"><span>or continue with</span></div>
+      ${config.registrationEnabled ? `<div class="consent-box social-consent">
+        <div class="privacy-preview">${privacyLink}<p>Required before a new account can be created with a provider.</p></div>
+        <label class="check-row"><input type="checkbox" id="oauth-privacy-acknowledged"><span>I have read and acknowledge the published Privacy Notice.</span></label>
+      </div>` : ""}
       <div class="social-buttons">
-        <button type="button" class="social-button" data-action="social-login" data-provider="Google"><span class="google-mark" aria-hidden="true">G</span>Google</button>
-        <button type="button" class="social-button" data-action="social-login" data-provider="Apple"><span class="apple-mark" aria-hidden="true">●</span>Apple</button>
-      </div>
-      <p class="privacy-footnote">Your personal details and privacy choices must be handled by the backend and recorded according to the published Privacy Notice. Never store passwords or consent records in this browser preview.</p>
+        ${config.oauthProviders.includes("google") ? `<button type="button" class="social-button" data-action="social-login" data-provider="google"><span class="google-mark" aria-hidden="true">G</span>Google</button>` : ""}
+        ${config.oauthProviders.includes("apple") ? `<button type="button" class="social-button" data-action="social-login" data-provider="apple"><span class="apple-mark" aria-hidden="true">●</span>Apple</button>` : ""}
+      </div>` : `<p class="privacy-footnote">Google and Apple sign-in are not configured by the service operator yet.</p>`}
+      <p class="privacy-footnote">Passwords are sent only over the configured API connection and stored server-side as BCrypt hashes. Your sign-in session is held in a protected, HTTP-only cookie.</p>
     </div>
     <section class="profile-options" aria-labelledby="profile-options-title">
       <p class="eyebrow">Your details</p>
       <h2 id="profile-options-title">Personal information & privacy</h2>
-      <p>After secure sign-in is connected, you will be able to review and update your account details, manage optional communication choices, and request access to or correction of your information.</p>
+      <p>After sign-in, account and privacy-request services will be connected here as they are implemented.</p>
       <div class="profile-option-row"><span><strong>Account details</strong><small>Name and email management</small></span><span class="coming-soon">After sign-in</span></div>
       <div class="profile-option-row"><span><strong>Privacy preferences</strong><small>Review or withdraw optional choices</small></span><span class="coming-soon">After sign-in</span></div>
-      <p class="privacy-footnote">No personal information or consent choices are collected or saved by this preview.</p>
     </section>
   </section>`;
 }
 
+async function renderProfilePage() {
+  const authState = {
+    account: null,
+    config: { registrationEnabled: false, oauthProviders: [], privacyNoticeUrl: "" },
+    notice: "",
+    error: ""
+  };
+  const callbackResult = new URLSearchParams(window.location.hash.split("?")[1] || "").get("auth");
+  if (callbackResult === "success") authState.notice = "You are signed in.";
+  if (callbackResult === "failed") authState.error = "Sign-in did not complete. Check the provider configuration and try again.";
+  appContent.innerHTML = `<section>${pageHeading("Your account", "Loading account…")}</section>`;
+
+  try {
+    authState.config = await requestJson("/api/v1/auth/config", { cache: "no-store" });
+    if (!authState.config || !Array.isArray(authState.config.oauthProviders)) {
+      throw new Error("The account service returned an invalid configuration.");
+    }
+    try {
+      const account = await requestJson("/api/v1/auth/me", { cache: "no-store" });
+      authState.notice = await clearQrForAccountSwitch(account.accountId);
+      authState.account = account;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    }
+  } catch (error) {
+    console.warn("Account status could not be loaded.", error);
+    authState.error = "The account service is unavailable. Start the backend and try again.";
+  }
+  if (profileMode === "register" && !authState.config.registrationEnabled) profileMode = "login";
+  if (profileFeedback) {
+    authState.notice = profileFeedback;
+    profileFeedback = "";
+  }
+  if (currentPage() === "profile") appContent.innerHTML = profilePage(authState);
+}
+
 function setProfileMode(mode) {
   profileMode = mode === "register" ? "register" : "login";
+  profileFeedback = "";
   render();
 }
 
@@ -577,7 +697,7 @@ function render() {
       void renderHistoryPage();
       break;
     case "profile":
-      appContent.innerHTML = profilePage();
+      void renderProfilePage();
       break;
     default:
       appContent.innerHTML = homePage();
@@ -642,7 +762,57 @@ document.addEventListener("click", async (event) => {
       setProfileMode(control.dataset.mode);
       break;
     case "social-login":
-      showNotice(`${control.dataset.provider} sign-in isn't connected`, "No account sign-in occurred. OAuth provider setup and secure backend callbacks are required before this can be enabled.");
+      try {
+        const csrf = await csrfHeaders();
+        const result = await requestJson("/api/v1/auth/oauth/prepare", {
+          method: "POST",
+          headers: { ...csrf, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: control.dataset.provider,
+            privacyNoticeAcknowledged: Boolean(document.querySelector("#oauth-privacy-acknowledged")?.checked)
+          }),
+          cache: "no-store"
+        });
+        window.location.assign(apiUrl(result.authorizationUrl));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Provider sign-in could not be started.";
+        const accountMessage = document.querySelector("#account-message");
+        if (accountMessage) accountMessage.textContent = message;
+        announce(message);
+      }
+      break;
+    case "logout":
+      try {
+        const csrf = await csrfHeaders();
+        const response = await fetch(apiUrl("/api/v1/auth/logout"), {
+          method: "POST",
+          headers: csrf,
+          credentials: "include",
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) throw new ApiError(response.status, "Sign out failed. Please try again.");
+        let notice = "You have been signed out.";
+        try {
+          await clearAllCachedQr();
+        } catch (cacheError) {
+          console.error("Saved QR codes could not be deleted after sign-out.", cacheError);
+          notice = "You have been signed out, but this browser could not delete all saved QR codes.";
+        }
+        try {
+          localStorage.removeItem(LAST_QR_ACCOUNT_KEY);
+        } catch (storageError) {
+          console.error("The saved QR account reference could not be removed after sign-out.", storageError);
+          notice = "You have been signed out, but this browser could not fully clear local QR data.";
+        }
+        profileMode = "login";
+        profileFeedback = notice;
+        render();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Sign out failed. Please try again.";
+        const accountMessage = document.querySelector("#account-message");
+        if (accountMessage) accountMessage.textContent = message;
+        console.error("Visitor sign-out failed.", error);
+      }
       break;
     case "refresh-qr":
       if (!control.disabled) await renderQrPage();
@@ -667,20 +837,84 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   if (event.target.id !== "account-form") return;
   event.preventDefault();
   const form = event.target;
   const message = form.querySelector("#account-message");
 
   if (!form.reportValidity()) return;
-  if (profileMode === "register" && !form.elements.privacyAcknowledged.checked) {
-    message.textContent = "Please acknowledge the account Privacy Notice to continue.";
+  if (profileMode === "register" && !form.elements.privacyNoticeAcknowledged.checked) {
+    message.textContent = "Please acknowledge the published Privacy Notice to continue.";
     return;
   }
 
-  message.textContent = "The account API is not connected. Nothing was sent or saved; no account was created.";
-  announce(message.textContent);
+  const submitButton = form.querySelector('[type="submit"]');
+  submitButton.disabled = true;
+  message.textContent = profileMode === "register" ? "Creating your account…" : "Signing in…";
+  try {
+    const csrf = await csrfHeaders();
+    if (profileMode === "register") {
+      await requestJson("/api/v1/auth/register", {
+        method: "POST",
+        headers: { ...csrf, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: form.elements.fullName.value.trim(),
+          email: form.elements.email.value.trim(),
+          password: form.elements.password.value,
+          privacyNoticeAcknowledged: form.elements.privacyNoticeAcknowledged.checked
+        }),
+        cache: "no-store"
+      });
+      profileMode = "login";
+      profileFeedback = "Account created. Sign in with your email and password.";
+      await renderProfilePage();
+      return;
+    }
+
+    const response = await fetch(apiUrl("/api/v1/auth/login"), {
+      method: "POST",
+      headers: {
+        ...csrf,
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        email: form.elements.email.value.trim(),
+        password: form.elements.password.value
+      }),
+      credentials: "include",
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) {
+      let errorMessage = "Sign-in failed. Check your email and password.";
+      try {
+        const body = await response.json();
+        if (typeof body.message === "string") errorMessage = body.message;
+      } catch (error) {
+        console.debug("The sign-in error response did not contain JSON.", error);
+      }
+      throw new ApiError(response.status, errorMessage);
+    }
+    const account = await response.json();
+    if (!account || typeof account.accountId !== "string") {
+      throw new Error("The account service returned an invalid sign-in response.");
+    }
+    profileFeedback = await clearQrForAccountSwitch(account.accountId);
+    profileMode = "login";
+    if (!profileFeedback) profileFeedback = "You are signed in.";
+    window.location.hash = "#profile";
+    await renderProfilePage();
+  } catch (error) {
+    const errorMessage = error instanceof Error
+      ? error.message
+      : "Account request failed. Please try again.";
+    message.textContent = errorMessage;
+    announce(errorMessage);
+  } finally {
+    if (submitButton.isConnected) submitButton.disabled = false;
+  }
 });
 
 window.addEventListener("hashchange", render);
