@@ -2,7 +2,7 @@
 
 Chiang Rai Pass is a planned mobile-first web application for tourists. Its key goals are to display dynamic QR codes quickly, remain useful when connectivity is unstable, process payments reliably, and prevent QR redemption fraud.
 
-> **Project status:** Foundation and visitor UI scaffold. Payments, backend authentication, catalog/history APIs, and venue redemption are not implemented. The PWA caches its static app shell; dynamic QR display/offline caching waits for the authenticated QR API contract.
+> **Project status:** Foundation and visitor UI scaffold. Email/password authentication is implemented; Google/Apple OAuth is environment-configured but requires provider credentials. The public catalog API is implemented but not yet connected to the sample UI. Payments, history, and venue redemption are not implemented. The PWA caches its static app shell; dynamic QR display/offline caching waits for the authenticated QR API contract.
 
 ## Product and architecture goals
 
@@ -18,6 +18,7 @@ Chiang Rai Pass is a planned mobile-first web application for tourists. Its key 
 - [Architecture blueprint](docs/architecture.md): logical components, critical flows, security and consistency requirements, proposed project layout, and implementation decisions to make.
 - [Development workflow](docs/development-workflow.md): branch naming, pull request expectations, and a phased implementation sequence.
 - [Visitor app feature](docs/visitor-app-feature.md): five-screen navigation, current preview behavior, offline QR limits, and the backend contracts needed for live data.
+- [Authentication setup](docs/authentication.md): email/password sessions, Google/Apple OAuth configuration, privacy-notice gating, and production prerequisites.
 
 ## Starter stack
 
@@ -48,7 +49,7 @@ Prerequisites: Java 21, Maven 3.9+, and SQL Server 2022 or a compatible SQL Serv
 
    The API applies Flyway migrations on startup. Check it at `http://localhost:8080/api/v1/health`.
 
-3. Serve `FrontEnd/` at `http://localhost:5500` with a static-file development server, such as the VS Code Live Server extension. The visitor UI calls the API at `http://localhost:8080`; configure `FrontEnd/js/config.js` if your local API address differs. The five screens and sample catalog/cart work in the browser. Public catalog read endpoints are implemented, but the frontend still uses sample catalog data, and the catalog tables require approved records before they return listings. Account, payment, and history endpoints, plus authenticated QR issuance, still need implementation.
+3. Serve `FrontEnd/` at `http://localhost:5500` with a static-file development server, such as the VS Code Live Server extension. The visitor UI calls the API at `http://localhost:8080`; configure `FrontEnd/js/config.js` if your local API address differs. The five screens and sample catalog/cart work in the browser. Public catalog and authentication endpoints are implemented. Apply Flyway migrations by starting the backend against SQL Server. New registrations remain disabled until a reviewed privacy notice is published and explicitly configured; provider sign-in additionally requires provider credentials. See [Authentication setup](docs/authentication.md). Payment, history, and authenticated QR issuance still need implementation.
 
 4. Run backend tests with `mvn -f BackEnd/pom.xml test`.
 

@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document translates the product requirements into an initial architecture. The repository foundation now uses plain HTML/CSS/JavaScript for the static visitor UI, Java 21 with Spring Boot 3.5 for the REST API, and Microsoft SQL Server with Flyway migrations. The implementation is still a scaffold: public catalog read endpoints and their SQL Server tables are in place, but approved catalog records must be populated before they return listings. Payment, authentication, QR issuance/redemption, and live frontend catalog integration remain future work.
+This document translates the product requirements into an initial architecture. The repository foundation now uses plain HTML/CSS/JavaScript for the static visitor UI, Java 21 with Spring Boot 3.5 for the REST API, and Microsoft SQL Server with Flyway migrations. Public catalog read endpoints and server-side email/password session authentication are implemented; the catalog tables require approved records, and Google/Apple OAuth require provider credentials. Payment, history, QR issuance/redemption, and live frontend catalog integration remain future work.
 
 ## Product requirements and measurable outcomes
 

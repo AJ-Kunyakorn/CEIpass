@@ -10,9 +10,9 @@ This feature adds the five requested mobile-first screens and navigable bottom b
 | Buy | Clearly marked sample passes, add/remove quantity, locally persisted demo cart, subtotal, and a safe checkout explanation. | Published pass records, server-owned cart/order, inventory/eligibility, payment-provider checkout, and order status. |
 | My QR | QR API loading/error states; short-lived QR caching/display support; expiry countdown; offline-risk warning and local cache removal. | Authentication, pass eligibility, unpredictable short-lived QR issuance/rotation, scanner validation, and server-side single-use redemption. |
 | History | Loading, empty, and unavailable states; renders a validated history response. | Authenticated, paginated, server-owned usage records and retention/privacy rules. |
-| Profile | Email/password and Google/Apple sign-in presentation; create-account form; distinct draft-notice acknowledgement and optional marketing choice; account/privacy-management preview. | Secure account APIs, OAuth configuration/callbacks, password policy and recovery, published notices, privacy rights, and authoritative consent records. |
+| Profile | Email/password account creation and session sign-in; optional Google/Apple OAuth; current account display and sign-out; published-notice acknowledgement before registration. | Provider credentials/callback setup, email verification and recovery, rate limiting, privacy rights, and authoritative consent-management APIs. |
 
-The backend now provides read-only SQL-backed public catalog endpoints. The catalog tables start empty and unpublished; no sample pass or partner is seeded or presented as real inventory. No payment, account, consent, redemption, or order is created by the current preview. The frontend still renders clearly labeled sample listings and does not yet consume these endpoints. Do not treat the browser's cart or cached QR data as authoritative.
+The backend provides SQL-backed public catalog endpoints and server-side session authentication. The catalog tables start empty and unpublished; no sample pass or partner is seeded or presented as real inventory. New account registration is disabled unless the operator enables it and configures a reviewed privacy notice/version. Google and Apple sign-in require provider credentials. Payment, redemption, and order flows are not implemented. The frontend still renders clearly labeled sample catalog listings and does not yet consume the catalog endpoints. Do not treat the browser's cart or cached QR data as authoritative.
 
 ## Navigation and usability
 
@@ -66,14 +66,14 @@ All authenticated endpoints should return a consistent `401` when the visitor se
 
 ## Profile, consent, and PDPA implementation boundary
 
-- Email/password authentication should be implemented by the backend using a vetted password-hashing approach, rate limiting, secure session/token handling, verification, and account recovery. Never store a password or token in the demo cart or QR cache.
-- Google and Apple sign-in require provider app configuration, server-verified authorization responses, state/nonce validation, and backend account-linking policy. The current buttons only explain that sign-in is not configured.
+- Email/password authentication uses BCrypt hashes, Spring Security sessions, CSRF protection, and an HTTP-only session cookie. Never store a password or session token in the demo cart or QR cache. Email verification, rate limiting, password recovery, and account locking are not yet implemented; do not enable public production registration until these controls are added.
+- Google and Apple sign-in require provider app configuration and verified OIDC responses. OAuth state and ID-token validation are handled by Spring Security; provider accounts are not silently linked to existing email accounts. Configure callback URLs and secrets as described in `docs/authentication.md`.
 - Publish a clear privacy notice before enabling registration. It should identify the data controller/contact, purposes, data categories, legal basis per purpose, recipients/processors, retention, data-subject rights/request channel, and cross-border transfers where relevant. Obtain qualified legal/privacy review; this template does not claim PDPA compliance.
 - Distinguish notice acknowledgement from consent. Do not make optional marketing consent a condition of purchasing or using a pass. Record consent only where consent is the selected legal basis, with purpose, notice/version, choice, and timestamp. Support withdrawal and retain appropriate evidence.
 - `POST /api/v1/me/privacy-preferences` should accept purpose-scoped choices and notice version; the backend must validate and persist an auditable record. Do not infer consent from a prechecked checkbox, silence, or the browser's `localStorage`.
 - Provide a way to request account/data access or correction and account deletion/retention review through a properly authenticated backend process.
 
-The profile screen's current notice and choices are explicitly a non-functional draft preview, not a privacy notice, consent collection, or compliance claim. Do not enable registration or ask users for real personal information until the reviewed notice and backend storage/withdrawal process are in place.
+The operator must publish and review the privacy notice and configure its URL/version before enabling account registration. A notice acknowledgement is stored separately from optional marketing consent; marketing consent is not collected by this implementation. This does not claim PDPA compliance. Privacy rights and consent withdrawal need their own backend workflows.
 
 ## Acceptance checks
 
@@ -83,5 +83,6 @@ The profile screen's current notice and choices are explicitly a non-functional 
 - Verify the QR screen's pending, service-unavailable, offline-without-cache, cached/unexpired, expired, and clear-cache states. A cached image must not be displayed past expiry.
 - Verify the service worker serves the app shell offline and does not cache `/api/` or cross-origin responses.
 - Verify History handles loading, empty, malformed, and API failure responses without fabricating records.
-- Verify registration separates required privacy-notice acknowledgement from optional marketing preference; sign-in/OAuth controls must not imply a successful authentication.
+- Verify email registration and login establish real server-side sessions, login/logout require CSRF tokens, and account configuration keeps registration disabled without an explicitly enabled, published privacy notice.
+- Verify Google and Apple login only appear when configured, OAuth callbacks validate state and verified identity claims, and an existing email account is never auto-linked.
 - At venues, test simultaneous online redemptions and the offline reconciliation conflict policy separately. Screenshot blocking is not an acceptance criterion because browsers cannot guarantee it.
