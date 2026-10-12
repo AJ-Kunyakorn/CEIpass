@@ -1,0 +1,24 @@
+{
+  "name": "Chiang Rai Pass",
+  "short_name": "CR Pass",
+  "description": "Explore Chiang Rai with one convenient visitor pass.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f2",
+  "theme_color": "#f6f7f2",
+  "icons": [
+    {
+      "src": "./icons/pass-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/pass-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
