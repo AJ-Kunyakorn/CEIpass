@@ -54,3 +54,17 @@ Prerequisites: Java 21, Maven 3.9+, and SQL Server 2022 or a compatible SQL Serv
 4. Run backend tests with `mvn -f BackEnd/pom.xml test`.
 
 The local SQL Server connection above trusts the local development certificate. Use a properly validated TLS certificate and environment-specific secrets outside development.
+
+## Google Cloud continuous deployment
+
+The root [cloudbuild.yaml](cloudbuild.yaml) builds and tests the backend, packages the static frontend into the same container, pushes the image to Artifact Registry, and deploys one public Cloud Run service. Serving both on one origin keeps the browser session and CSRF flow together.
+
+Before connecting a Cloud Build trigger to `main`:
+
+1. Enable Cloud Build, Cloud Run, Artifact Registry, and Secret Manager APIs in the Google Cloud project. Create the Artifact Registry Docker repository named `webdev-dockers` in `us-central1`, or change `_AR_REPOSITORY` in `cloudbuild.yaml` to the repository you created.
+2. Create Secret Manager secrets named `cei-pass-db-url`, `cei-pass-db-username`, and `cei-pass-db-password`, and add the matching SQL Server connection values. Do not put database credentials in this file or Cloud Build substitutions.
+3. Grant the Cloud Run runtime service account Secret Manager Secret Accessor on those three secrets. Configure Cloud Build's service account with permission to push to Artifact Registry, deploy Cloud Run services, and use the Cloud Run runtime service account.
+4. Configure the SQL Server connection so it is reachable securely from Cloud Run. For Cloud SQL, complete the instance connection/IAM or connector setup and use the corresponding JDBC connection string in `cei-pass-db-url`; this pipeline does not create a database or configure Cloud SQL networking.
+5. Create a Cloud Build repository trigger for pushes to `main` and set `cloudbuild.yaml` as its build configuration. The first deployment runs Flyway migrations at application startup.
+
+The service allows unauthenticated HTTP access so visitors can load the app; application endpoints still enforce their own authentication. Registration remains disabled by default. Set up and review privacy-notice configuration before enabling it. Google/Apple OAuth also needs provider credentials and a deployed callback URL before it can be enabled.

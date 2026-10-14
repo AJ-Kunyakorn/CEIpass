@@ -1,0 +1,47 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:$COMMIT_SHA"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:$COMMIT_SHA"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:$COMMIT_SHA"
+      - "--region"
+      - "${_REGION}"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--port"
+      - "8080"
+      - "--set-env-vars"
+      - "SESSION_COOKIE_SECURE=true"
+      - "--set-secrets"
+      - "DB_URL=${_DB_URL_SECRET}:latest,DB_USERNAME=${_DB_USERNAME_SECRET}:latest,DB_PASSWORD=${_DB_PASSWORD_SECRET}:latest"
+
+images:
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:$COMMIT_SHA"
+
+substitutions:
+  _PROJECT_ID: "winged-oath-511413-i8"
+  _REGION: "us-central1"
+  _AR_REPOSITORY: "webdev-dockers"
+  _SERVICE_NAME: "cei-pass"
+  _DB_URL_SECRET: "cei-pass-db-url"
+  _DB_USERNAME_SECRET: "cei-pass-db-username"
+  _DB_PASSWORD_SECRET: "cei-pass-db-password"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
