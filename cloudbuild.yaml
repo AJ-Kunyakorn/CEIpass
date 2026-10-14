@@ -42,7 +42,7 @@ images:
 substitutions:
   _PROJECT_ID: "winged-oath-511413-i8"
   _REGION: "us-central1"
-  _AR_REPOSITORY: "CEI-pass"
+  _AR_REPOSITORY: "cei-pass"
   _SERVICE_NAME: "cei-pass"
 
 options:
